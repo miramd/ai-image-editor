@@ -120,19 +120,138 @@ denoise_base_pil = None
 MAX_PREVIEW_W = 520
 MAX_PREVIEW_H = 300
 
-# Theme
-THEME = {
+# Theme definitions
+# we maintain separate dictionaries for dark and light modes and swap between them
+DARK_THEME = {
     "bg": "#0b111b",
     "panel": "#121a27",
     "card": "#0f1724",
     "border": "#243447",
     "accent": "#3b82f6",
+    "accent_hover": "#0b4ed0",
     "accent_2": "#f59e0b",
     "text": "#e5edf7",
     "muted": "#8aa0bb",
+    "canvas_bg": "#0a1220",
+    "entry_bg": "#0d1625",
+    "button_active": "#0f766e",
+    "save_button": "#059669",
+    "save_button_active": "#047857",
+    "bg_choice_button": "#0ea5e9",
+    "bg_choice_hover": "#0284c7",
 }
+
+LIGHT_THEME = {
+    "bg": "#ffffff",
+    "panel": "#f3f4f6",
+    "card": "#ffffff",
+    "border": "#d1d5db",
+    "accent": "#3b82f6",
+    "accent_hover": "#bfdbfe",
+    "accent_2": "#f59e0b",
+    "text": "#111827",
+    "muted": "#6b7280",
+    "canvas_bg": "#ffffff",
+    "entry_bg": "#ffffff",
+    "button_active": "#bfdbfe",
+    "save_button": "#10b981",
+    "save_button_active": "#059669",
+    "bg_choice_button": "#0ea5e9",
+    "bg_choice_hover": "#0284c7",
+}
+
+# start in dark mode
+THEME = DARK_THEME
+current_theme = "dark"
+
+# toolbar colours are derived from THEME, update after THEME assignment
 TOOLBAR_BG = THEME["panel"]
-TOOLBAR_HOVER = "#1f2d3e"
+TOOLBAR_HOVER = THEME.get("accent_hover", "#1f2d3e")
+
+# helper to convert old theme values to new ones for existing widgets
+
+def _replace_color(val, old_theme, new_theme):
+    for k, v in old_theme.items():
+        if val == v:
+            return new_theme.get(k, val)
+    return val
+
+
+def apply_theme():
+    """Walk the widget tree and replace any colours that match the old theme.
+
+    This relies on most widgets having been initialised with values taken from
+    the THEME dictionary. When the user toggles modes we swap THEME and then
+    call this function to update every widget in place.
+    """
+    old = LIGHT_THEME if current_theme == "dark" else DARK_THEME
+    new = THEME
+
+    def recurse(w):
+        # only configure options that the widget actually exposes
+        for opt in ("bg", "fg", "highlightbackground", "activebackground", "activeforeground", "insertbackground", "troughcolor"):
+            try:
+                if opt in w.keys():
+                    cur = w.cget(opt)
+                    if cur:
+                        updated = _replace_color(cur, old, new)
+                        if updated != cur:
+                            w.configure(**{opt: updated})
+            except Exception:
+                pass
+        for c in w.winfo_children():
+            recurse(c)
+
+    recurse(root)
+    # some canvases are reconfigured elsewhere; make sure they pick up the new value
+    try:
+        before_canvas.configure(bg=THEME["canvas_bg"])
+        after_canvas.configure(bg=THEME["canvas_bg"])
+    except NameError:
+        pass
+
+    # reapply hover styling for all buttons so hover colours update with the theme
+    try:
+        apply_hover(upload_button, THEME["accent"], THEME.get("accent_hover"))
+        apply_hover(save_button, THEME.get("save_button"), THEME.get("save_button_active"))
+        apply_hover(screen_button, THEME.get("accent", "#6366f1"), THEME.get("accent_hover", "#4f46e5"))
+        apply_hover(remove_bg_button, THEME.get("accent_2"), "#d97706")
+        apply_hover(bg_choice_button, THEME.get("bg_choice_button"), THEME.get("bg_choice_hover"))
+        apply_hover(blend_button, THEME.get("bg_choice_button"), THEME.get("bg_choice_hover"))
+        apply_hover(reset_button, THEME.get("border", "#475569"), THEME.get("panel", "#334155"))
+        apply_hover(ai_erase_button, "#f59e0b", "#d97706")
+        apply_hover(denoise_mode_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(zoom_select_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(undo_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(redo_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(fit_screen_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(zoom_out_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(zoom_in_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(rotate_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(crop_button, THEME.get("border"), THEME.get("panel"))
+        apply_hover(move_fg_button, THEME.get("accent"), THEME.get("accent_hover"))
+        apply_hover(move_bg_button, THEME.get("accent"), THEME.get("accent_hover"))
+        apply_hover(denoise_button, THEME.get("accent_2"), THEME.get("accent_2"))
+    except NameError:
+        # some buttons may not exist yet when apply_theme is invoked early
+        pass
+
+
+def toggle_theme():
+    global current_theme, THEME, TOOLBAR_BG, TOOLBAR_HOVER
+    if current_theme == "dark":
+        current_theme = "light"
+        THEME = LIGHT_THEME
+    else:
+        current_theme = "dark"
+        THEME = DARK_THEME
+    TOOLBAR_BG = THEME["panel"]
+    TOOLBAR_HOVER = THEME.get("accent_hover", TOOLBAR_HOVER)
+    # update button label as well
+    theme_button.config(text="Dark Mode" if current_theme == "light" else "Light Mode")
+    apply_theme()
+
+# initial widgets are created using THEME values, so no need to call apply_theme here
 FONT_TITLE = ("Segoe UI Semibold", 14)
 FONT_LABEL = ("Segoe UI Semibold", 10)
 FONT_BODY = ("Segoe UI", 10)
@@ -154,6 +273,20 @@ Label(
     fg=THEME["muted"],
     bg=THEME["bg"],
 ).pack(anchor="w", pady=(2, 0))
+
+# theme toggle switch (top right corner)
+theme_button = Button(
+    header_bar,
+    text="Light Mode",
+    command=toggle_theme,
+    bg=THEME["panel"],
+    fg=THEME["text"],
+    bd=0,
+    highlightthickness=0,
+    relief="flat",
+    cursor="hand2",
+)
+theme_button.pack(side=RIGHT, padx=4, pady=3)
 
 # Main workspace
 workspace = Frame(root, bg=THEME["bg"])
@@ -257,7 +390,7 @@ Label(before_frame, text="Before", font=FONT_LABEL, fg=THEME["muted"], bg=THEME[
 before_canvas = Canvas(
     before_frame,
     highlightthickness=0,
-    bg="#0a1220",
+    bg=THEME["canvas_bg"],
     width=MAX_PREVIEW_W,
     height=MAX_PREVIEW_H,
 )
@@ -275,7 +408,7 @@ Label(after_frame, text="After", font=FONT_LABEL, fg=THEME["muted"], bg=THEME["c
 after_canvas = Canvas(
     after_frame,
     highlightthickness=0,
-    bg="#0a1220",
+    bg=THEME["canvas_bg"],
     width=MAX_PREVIEW_W,
     height=MAX_PREVIEW_H,
 )
@@ -334,7 +467,7 @@ resize_w_entry = Entry(
     resize_row,
     textvariable=resize_w_var,
     width=6,
-    bg="#0d1625",
+    bg=THEME.get("entry_bg"),
     fg=THEME["text"],
     insertbackground=THEME["text"],
     relief="flat",
@@ -346,7 +479,7 @@ resize_h_entry = Entry(
     resize_row,
     textvariable=resize_h_var,
     width=6,
-    bg="#0d1625",
+    bg=THEME.get("entry_bg"),
     fg=THEME["text"],
     insertbackground=THEME["text"],
     relief="flat",
@@ -358,7 +491,7 @@ apply_wh_button = Button(
     text="Apply",
     bg=THEME["accent"],
     fg="white",
-    activebackground="#0f766e",
+    activebackground=THEME.get("button_active"),
     activeforeground="white",
     bd=0,
     highlightthickness=0,
@@ -378,7 +511,7 @@ percent_scale = Scale(
     label="Resize (%)",
     bg=THEME["panel"],
     fg=THEME["text"],
-    troughcolor="#1f2c3d",
+    troughcolor=THEME.get("border"),
     highlightthickness=0,
     font=FONT_BODY,
 )
@@ -390,7 +523,7 @@ apply_percent_button = Button(
     text="Apply Resize",
     bg=THEME["accent"],
     fg="white",
-    activebackground="#0f766e",
+    activebackground=THEME.get("button_active"),
     activeforeground="white",
     bd=0,
     highlightthickness=0,
@@ -412,7 +545,7 @@ contrast_scale = Scale(
     label="Contrast",
     bg=THEME["panel"],
     fg=THEME["text"],
-    troughcolor="#1f2c3d",
+    troughcolor=THEME.get("border"),
     highlightthickness=0,
     font=FONT_BODY,
 )
@@ -427,7 +560,7 @@ brightness_scale = Scale(
     label="Brightness",
     bg=THEME["panel"],
     fg=THEME["text"],
-    troughcolor="#1f2c3d",
+    troughcolor=THEME.get("border"),
     highlightthickness=0,
     font=FONT_BODY,
 )
@@ -442,7 +575,7 @@ saturation_scale = Scale(
     label="Color (Saturation %)",
     bg=THEME["panel"],
     fg=THEME["text"],
-    troughcolor="#1f2c3d",
+    troughcolor=THEME.get("border"),
     highlightthickness=0,
     font=FONT_BODY,
 )
@@ -457,7 +590,7 @@ clarity_scale = Scale(
     label="Clarity (Blur / Sharpen)",
     bg=THEME["panel"],
     fg=THEME["text"],
-    troughcolor="#1f2c3d",
+    troughcolor=THEME.get("border"),
     highlightthickness=0,
     font=FONT_BODY,
 )
@@ -472,7 +605,7 @@ denoise_scale = Scale(
     label="Denoise Strength",
     bg=THEME["panel"],
     fg=THEME["text"],
-    troughcolor="#1f2c3d",
+    troughcolor=THEME.get("border"),
     highlightthickness=0,
     font=FONT_BODY,
 )
@@ -488,7 +621,7 @@ blend_scale = Scale(
     label="Blend Strength (%)",
     bg=THEME["panel"],
     fg=THEME["text"],
-    troughcolor="#1f2c3d",
+    troughcolor=THEME.get("border"),
     highlightthickness=0,
     font=FONT_BODY,
 )
@@ -694,26 +827,26 @@ denoise_mode_button = Button(
 )
 denoise_mode_button.pack(side=LEFT, padx=4, pady=3)
 
-apply_hover(upload_button, THEME["accent"], "#0b4ed0")
-apply_hover(save_button, "#059669", "#047857")
-apply_hover(screen_button, "#6366f1", "#4f46e5")
+apply_hover(upload_button, THEME["accent"], THEME.get("accent_hover"))
+apply_hover(save_button, THEME.get("save_button"), THEME.get("save_button_active"))
+apply_hover(screen_button, THEME.get("accent", "#6366f1"), THEME.get("accent_hover", "#4f46e5"))
 apply_hover(remove_bg_button, THEME["accent_2"], "#d97706")
-apply_hover(bg_choice_button, "#0ea5e9", "#0284c7")
-apply_hover(blend_button, "#0ea5e9", "#0284c7")
-apply_hover(reset_button, "#475569", "#334155")
-apply_hover(ai_erase_button, "#f59e0b", "#d97706")
-apply_hover(denoise_mode_button, "#243447", "#1c2a3a")
-apply_hover(zoom_select_button, "#243447", "#1c2a3a")
-apply_hover(undo_button, "#475569", "#334155")
-apply_hover(redo_button, "#475569", "#334155")
-apply_hover(fit_screen_button, "#243447", "#1c2a3a")
-apply_hover(zoom_out_button, "#243447", "#1c2a3a")
-apply_hover(zoom_in_button, "#243447", "#1c2a3a")
-apply_hover(rotate_button, "#243447", "#1c2a3a")
-apply_hover(crop_button, "#243447", "#1c2a3a")
-apply_hover(move_fg_button, "#2563eb", "#1d4ed8")
-apply_hover(move_bg_button, "#2563eb", "#1d4ed8")
-apply_hover(denoise_button, "#7c3aed", "#6d28d9")
+apply_hover(bg_choice_button, THEME.get("bg_choice_button"), THEME.get("bg_choice_hover"))
+apply_hover(blend_button, THEME.get("bg_choice_button"), THEME.get("bg_choice_hover"))
+apply_hover(reset_button, THEME.get("border", "#475569"), THEME.get("panel", "#334155"))
+apply_hover(ai_erase_button, THEME.get("accent_2", "#f59e0b"), "#d97706")
+apply_hover(denoise_mode_button, THEME.get("border", "#243447"), THEME.get("panel", "#1c2a3a"))
+apply_hover(zoom_select_button, THEME.get("border", "#243447"), THEME.get("panel", "#1c2a3a"))
+apply_hover(undo_button, THEME.get("border", "#475569"), THEME.get("panel", "#334155"))
+apply_hover(redo_button, THEME.get("border", "#475569"), THEME.get("panel", "#334155"))
+apply_hover(fit_screen_button, THEME.get("border", "#243447"), THEME.get("panel", "#1c2a3a"))
+apply_hover(zoom_out_button, THEME.get("border", "#243447"), THEME.get("panel", "#1c2a3a"))
+apply_hover(zoom_in_button, THEME.get("border", "#243447"), THEME.get("panel", "#1c2a3a"))
+apply_hover(rotate_button, THEME.get("border", "#243447"), THEME.get("panel", "#1c2a3a"))
+apply_hover(crop_button, THEME.get("border", "#243447"), THEME.get("panel", "#1c2a3a"))
+apply_hover(move_fg_button, THEME.get("accent", "#2563eb"), THEME.get("accent_hover", "#1d4ed8"))
+apply_hover(move_bg_button, THEME.get("accent", "#2563eb"), THEME.get("accent_hover", "#1d4ed8"))
+apply_hover(denoise_button, THEME.get("accent_2", "#7c3aed"), THEME.get("accent_2", "#6d28d9"))
 
 
 def set_controls_enabled(enabled):
@@ -791,7 +924,7 @@ def render_previews():
     after_preview = fit_preview(processed_pil, zoom_percent, cap_size=True)
 
     before_tk = ImageTk.PhotoImage(before_preview)
-    before_canvas.configure(bg="#0a1220")
+    before_canvas.configure(bg=THEME["canvas_bg"])    
     before_canvas.delete("all")
     bx = (MAX_PREVIEW_W - before_preview.width) // 2
     by = (MAX_PREVIEW_H - before_preview.height) // 2
@@ -800,7 +933,7 @@ def render_previews():
 
     # After
     after_tk = ImageTk.PhotoImage(after_preview)
-    after_canvas.configure(bg="#0a1220")
+    after_canvas.configure(bg=THEME["canvas_bg"])    
     after_canvas.delete("all")
     ax = (MAX_PREVIEW_W - after_preview.width) // 2
     ay = (MAX_PREVIEW_H - after_preview.height) // 2
